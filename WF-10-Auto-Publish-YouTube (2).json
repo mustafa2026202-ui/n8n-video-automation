@@ -1,0 +1,357 @@
+{
+  "name": "WF-10-Auto-Publish-YouTube",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1TManpjSB2Kur_wkHezkQFSzwWinK_5IX",
+          "mode": "list",
+          "cachedResultName": "YouTube_Queue",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1TManpjSB2Kur_wkHezkQFSzwWinK_5IX"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        208,
+        304
+      ],
+      "id": "gdrive-trigger-001",
+      "name": "GDrive_Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "IEtLTd3slUdqj6Of",
+          "name": "Google Drive account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "video",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        304
+      ],
+      "id": "if-isvideo-001",
+      "name": "IF_IsVideo",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "video_binary"
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        688,
+        224
+      ],
+      "id": "gdrive-dl-001",
+      "name": "GDrive_Download",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "IEtLTd3slUdqj6Of",
+          "name": "Google Drive account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst fileName = item.name || 'untitled';\nconst baseName = fileName.replace(/\\.[^.]+$/, '');\nconst cleanTitle = baseName.replace(/[-_]/g, ' ').trim();\nconst requestId = 'YT-' + Date.now();\nconst timestamp = new Date().toISOString();\nconst description = cleanTitle + '\\n\\n#Shorts #Auto #Video\\n\\nPublished: ' + timestamp;\nreturn [{ json: { request_id: requestId, file_id: item.id, file_name: fileName, title: cleanTitle, description: description, hashtags: ['Shorts','Auto','Video'], timestamp: timestamp }, binary: $input.first().binary }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        224
+      ],
+      "id": "js-meta-001",
+      "name": "JS_PrepareMetadata",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.title }}",
+        "regionCode": "=US",
+        "categoryId": "=22",
+        "binaryProperty": "edited_video_binary",
+        "options": {
+          "description": "={{ $json.description }}",
+          "privacyStatus": "unlisted",
+          "tags": "={{ $json.hashtags.join(',') }}"
+        }
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2368,
+        224
+      ],
+      "id": "yt-upload-001",
+      "name": "YouTube_Upload",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "dW4mteaw8ZFVPyTx",
+          "name": "YouTube account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ir6OFT6mnNZBH7ihBoN9AoDrDE1LKdqk",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Publish_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2608,
+        224
+      ],
+      "id": "gsheets-001",
+      "name": "GSheets_Log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "e7fxUqy92YfcWH06",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// FFmpeg availability check\n// Note: child_process must be enabled in n8n .env:\n// NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs\n//\n// This node verifies setup and passes data through\n// Real FFmpeg check happens in FFmpeg_Edit_Video\n\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    ffmpeg_check: 'pending_runtime_check',\n    setup_note: 'Ensure NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs is in .env'\n  },\n  binary: item.binary\n}));"
+      },
+      "id": "check-ffmpeg-001",
+      "name": "Check_FFmpeg",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { execSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\nconst item = $input.first();\n\nconst TMPDIR = 'C:\\\\Users\\\\3D\\\\Videos\\\\n8n_tmp';\nconst INPUT = path.join(TMPDIR, 'input_video.mp4');\nconst OUTPUT = path.join(TMPDIR, 'output_video.mp4');\n\nif (!fs.existsSync(INPUT)) throw new Error('Input not found: ' + INPUT);\n\nif (fs.existsSync(OUTPUT)) fs.unlinkSync(OUTPUT);\n\nlet duration = 0;\ntry {\n  duration = parseFloat(\n    execSync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"' + INPUT + '\"', { timeout: 30000 }).toString().trim()\n  ) || 0;\n} catch(e) { duration = 0; }\n\nconst SCALE = 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black';\nconst trimOpt = duration > 30 ? '-t 30' : '';\nconst cmd = 'ffmpeg -y -i \"' + INPUT + '\" ' + trimOpt + ' -vf \"' + SCALE + '\" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k \"' + OUTPUT + '\" 2>&1';\n\ntry { execSync(cmd, { timeout: 300000 }); }\ncatch(e) {\n  const err = e.stdout ? e.stdout.toString().slice(-800) : e.message;\n  if (!fs.existsSync(OUTPUT)) throw new Error('FFmpeg failed: ' + err);\n}\n\nif (!fs.existsSync(OUTPUT)) throw new Error('FFmpeg output not created: ' + OUTPUT);\n\nreturn [{\n  json: {\n    ...item.json,\n    ffmpeg_output_path: OUTPUT,\n    ffmpeg_original_duration: duration,\n    ffmpeg_was_trimmed: duration > 30,\n    ffmpeg_output_size_bytes: fs.statSync(OUTPUT).size\n  },\n  binary: item.binary\n}];"
+      },
+      "id": "ffmpeg-edit-001",
+      "name": "FFmpeg_Edit_Video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "=C:\\Users\\3D\\Videos\\n8n_tmp\\output_video.mp4",
+        "options": {
+          "dataPropertyName": "edited_video_binary"
+        }
+      },
+      "id": "read-and-merge-001",
+      "name": "Read_And_Merge",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst item = $input.first();\n\nconst TMPDIR = 'C:\\\\Users\\\\3D\\\\Videos\\\\n8n_tmp';\nconst INPUT = path.join(TMPDIR, 'input_video.mp4');\n\n// Create directory if not exists\nif (!fs.existsSync(TMPDIR)) {\n  fs.mkdirSync(TMPDIR, { recursive: true });\n}\n\n// Get binary data\nconst binaryData = item.binary?.video_binary;\nif (!binaryData) throw new Error('No video_binary field found in input');\n\n// Write file using Buffer\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(INPUT, buf);\n\nif (!fs.existsSync(INPUT)) throw new Error('File was not written: ' + INPUT);\n\nreturn [{\n  json: {\n    ...item.json,\n    tmp_input_path: INPUT\n  },\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        224
+      ],
+      "id": "c5e48a7f-e019-407b-9e17-4486288efd64",
+      "name": "Write_Video_TmpFile"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GDrive_Trigger": {
+      "main": [
+        [
+          {
+            "node": "IF_IsVideo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_IsVideo": {
+      "main": [
+        [
+          {
+            "node": "GDrive_Download",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "GDrive_Download": {
+      "main": [
+        [
+          {
+            "node": "Check_FFmpeg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check_FFmpeg": {
+      "main": [
+        [
+          {
+            "node": "Write_Video_TmpFile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg_Edit_Video": {
+      "main": [
+        [
+          {
+            "node": "Read_And_Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read_And_Merge": {
+      "main": [
+        [
+          {
+            "node": "JS_PrepareMetadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS_PrepareMetadata": {
+      "main": [
+        [
+          {
+            "node": "YouTube_Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube_Upload": {
+      "main": [
+        [
+          {
+            "node": "GSheets_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write_Video_TmpFile": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg_Edit_Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "saveManualExecutions": true
+  },
+  "versionId": "f67aeb16-923f-4881-b544-b63ed2928ee8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3a5e79c99dbd2ad4a62046b9d8d6b2e3c44ec5027d19721c7ebd786cd58f0d66"
+  },
+  "id": "7pEh9OhsDTttiRif",
+  "tags": []
+}
